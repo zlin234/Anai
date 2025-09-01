@@ -1,54 +1,46 @@
+import os, requests, json
 from flask import Flask, request, jsonify, send_from_directory
-import os
-from datetime import datetime
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder="static")
 
-# Google Docs setup
-DOC_ID = os.environ.get("DOC_ID")  # put your doc ID in Render env
-SCOPES = ["https://www.googleapis.com/auth/documents"]
-SERVICE_ACCOUNT_FILE = "service_account.json"
+BIN_ID = os.environ.get("BIN_ID")      # JSONBin bin ID
+SECRET_KEY = os.environ.get("BIN_KEY") # JSONBin secret key
 
-creds = Credentials.from_service_account_file(
-    SERVICE_ACCOUNT_FILE, scopes=SCOPES
-)
-docs_service = build("docs", "v1", credentials=creds)
+JSONBIN_URL = f"https://api.jsonbin.io/v3/b/{BIN_ID}"
 
-mode = "learn"
+def get_memory():
+    r = requests.get(f"{JSONBIN_URL}/latest", headers={"X-Master-Key": SECRET_KEY})
+    data = r.json()
+    return data["record"].get("memory", [])
 
-def append_to_doc(text):
-    requests = [
-        {"insertText": {
-            "location": {"index": 1},
-            "text": f"{datetime.now()}: {text}\n"
-        }}
-    ]
-    docs_service.documents().batchUpdate(
-        documentId=DOC_ID, body={"requests": requests}
-    ).execute()
+def save_memory(memory_list):
+    r = requests.put(JSONBIN_URL, headers={"X-Master-Key": SECRET_KEY, "Content-Type":"application/json"}, 
+                     data=json.dumps({"memory": memory_list}))
+    return r.ok
 
 @app.route("/")
-def home():
+def index():
     return send_from_directory("static", "index.html")
 
-@app.route("/set_mode", methods=["POST"])
-def set_mode():
-    global mode
-    mode = request.json.get("mode", "learn")
-    return jsonify({"status": "ok", "mode": mode})
-
-@app.route("/message", methods=["POST"])
-def message():
-    global mode
+@app.route("/learn", methods=["POST"])
+def learn():
     data = request.json
-    text = data.get("text", "")
-    if mode == "learn":
-        append_to_doc(text)
-        return jsonify({"reply": "Learning..."})
-    else:
-        return jsonify({"reply": f"You said: {text}"})
+    text = data.get("text","").strip()
+    if not text: return jsonify({"ok":False,"error":"empty"}),400
+    mem = get_memory()
+    mem.append(text)
+    save_memory(mem)
+    return jsonify({"ok":True,"saved":text})
+
+@app.route("/reply", methods=["POST"])
+def reply():
+    data = request.json
+    prompt = data.get("prompt","").strip()
+    mem = get_memory()
+    if not mem:
+        return jsonify({"reply":"I don't know yet. Teach me first!"})
+    best = max(mem, key=lambda x: len(set(x.split()) & set(prompt.split())))
+    return jsonify({"reply": best})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",5000)))
