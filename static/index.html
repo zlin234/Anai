@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Learn & Reply</title>
+</head>
+<body>
+    <h1>AI Learn & Reply</h1>
+
+    <button onclick="setMode('learn')">Learn Mode</button>
+    <button onclick="setMode('reply')">Reply Mode</button>
+
+    <div>
+        <input id="msg" type="text" placeholder="Type message">
+        <button onclick="sendMsg()">Send</button>
+    </div>
+
+    <pre id="output"></pre>
+
+    <script>
+        async function setMode(mode) {
+            await fetch("/set_mode", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({mode})
+            });
+            document.getElementById("output").innerText = "Mode set to " + mode;
+        }
+
+        async function sendMsg() {
+            let text = document.getElementById("msg").value;
+            let res = await fetch("/message", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({text})
+            });
+            let data = await res.json();
+            document.getElementById("output").innerText = data.reply;
+        }
+    </script>
+</body>
+</html>
